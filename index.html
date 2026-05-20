@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <title>Send WA - Scheduler Control</title>
+    <style>
+        body{font-family:Arial,Helvetica,sans-serif;padding:20px;background:#f7f9fc}
+        .tabs{margin-bottom:12px}
+        .tab-btn{padding:10px 16px;margin-right:6px;border:1px solid #ccc;background:#fff;cursor:pointer;border-radius:4px}
+        .tab-btn.active{background:#0b74de;color:#fff;border-color:#0b74de}
+        .tab{background:#fff;border:1px solid #e1e6ee;padding:16px;border-radius:6px}
+        button{padding:8px 12px;margin:6px}
+        #status{margin-top:12px}
+    </style>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            padding: 20px; 
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: #f9f9f9;
+        }
+        .container {
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .log-box { 
+            width: 100%; 
+            height: 250px; 
+            overflow-y: auto; 
+            background: #2b2b2b; 
+            color: #a9b7c6;
+            padding: 15px; 
+            margin-top: 15px; 
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace; 
+            box-sizing: border-box;
+        }
+        .success-log { color: #629755; }
+        .error-log { color: #cc666e; }
+        .info-log { color: #6897bb; }
+        .warning-log { color: #bbb529; }
+        
+        button { 
+            padding: 12px 24px; 
+            font-size: 16px; 
+            cursor: pointer; 
+            border-radius: 4px;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        .stopped { 
+            background-color: #4CAF50; 
+            color: white; 
+            border: 1px solid #4CAF50;
+        }
+        .stopped:hover { background-color: #45a049; }
+        
+        .running { 
+            background-color: #f44336; 
+            color: white; 
+            border: 1px solid #f44336;
+        }
+        .running:hover { background-color: #d32f2f; }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        .status-off { background-color: #e0e0e0; color: #333; }
+        .status-on { background-color: #e8f5e9; color: #2e7d32; }
+    </style>
+</head>
+<body>
+<h1>Send WA - Scheduler Control</h1>
+<p>Gunakan panel di bawah untuk mengontrol integrasi pengiriman dan penarikan data otomatis.</p>
+
+<div class="tabs">
+    <button class="tab-btn" data-tab="tab-send">Kirim WA</button>
+    <button class="tab-btn" data-tab="tab-pull">Ambil Data</button>
+</div>
+
+<!-- ================= TAB 1: KIRIM WA ================= -->
+<div id="tab-send" class="tab" style="display:none;margin-top:10px">
+    <div class="container">
+        <h3>Auto Send WhatsApp</h3>
+        <p>Aplikasi ini akan memanggil API WhatsApp secara otomatis menggunakan AJAX setiap 5 menit</p>
+        
+        <div style="margin: 20px 0;">
+            <button id="toggleBtn" class="stopped">Mulai Auto Send</button>
+            <button id="run-send" style="padding: 12px 24px; font-size: 16px;">Kirim Sekarang (Manual)</button>
+            <span id="statusBadge" class="status-badge status-off">Status: BERHENTI</span>
+        </div>
+        
+        <div id="nextRun" style="font-size: 14px; color: #666; margin-bottom: 10px; display: none;">
+            Pengiriman selanjutnya pada: <span id="nextRunTime">-</span>
+        </div>
+
+        <div id="send-result" style="white-space:pre-wrap; margin-top:8px; color: #333;"></div>
+
+        <h3>Log Aktivitas Kirim WA:</h3>
+        <div id="log" class="log-box"></div>
+    </div>
+</div>
+
+<!-- ================= TAB 2: AMBIL DATA ================= -->
+<div id="tab-pull" class="tab" style="display:none;margin-top:12px">
+    <div class="container">
+        <h2>Ambil Data (enqueue)</h2>
+        <p>Tarik data dari sumber dan masukkan ke send_wa_history.</p>
+        
+        <div style="margin: 20px 0;">
+            <button id="togglePullBtn" class="stopped">Mulai Auto Pull (Senin 01:00 - 07:00)</button>
+            <button id="run-pull" style="padding: 12px 24px; font-size: 16px;">Jalankan Ambil Sekarang</button>
+            <span id="pullStatusBadge" class="status-badge status-off">Status: BERHENTI</span>
+        </div>
+
+        <div id="nextPullRun" style="font-size: 14px; color: #666; margin-bottom: 10px; display: none;">
+            Pengecekan jadwal selanjutnya pada: <span id="nextPullTime">-</span>
+        </div>
+
+        <div id="status" style="margin-top: 10px; font-size: 15px; font-weight: bold;">
+            Status Jadwal Saat Ini: <span id="running" style="color: #666;">Checking...</span>
+        </div>
+        
+        <div id="pull-result" style="white-space:pre-wrap;margin-top:8px"></div>
+        
+        <h3>Log Aktivitas Ambil Data:</h3>
+        <div id="pull-log" class="log-box"></div>
+    </div>
+</div>
+
+<script>
+// --- BAGIAN 1: Manajemen Tab & Fungsi Navigasi ---
+
+// Fungsi cek waktu lokal untuk menentukan apakah saat ini masuk jadwal penarikan data
+function checkCurrentSchedule(){
+    const now = new Date();
+    const day = now.getDay(); // 1 = Senin
+    const hour = now.getHours();
+    
+    const isScheduleMatch = (day === 1 && hour >= 1 && hour < 7);
+    const statusElement = document.getElementById('running');
+    
+    if(isScheduleMatch) {
+        statusElement.textContent = 'Running (Dalam Jadwal Senin)';
+        statusElement.style.color = '#2e7d32';
+    } else {
+        statusElement.textContent = 'Stopped (Diluar Jadwal)';
+        statusElement.style.color = '#f44336';
+    }
+}
+
+// Tab handling
+document.querySelectorAll('.tab-btn').forEach(b=>{
+    b.addEventListener('click', ()=>{
+        document.querySelectorAll('.tab').forEach(t=>t.style.display='none');
+        document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));
+        b.classList.add('active');
+        document.getElementById(b.dataset.tab).style.display='block';
+    });
+});
+
+// Default open send tab
+document.querySelector('.tab-btn[data-tab="tab-send"]').click();
+
+// Jalankan cek status jadwal di awal halaman dimuat
+checkCurrentSchedule();
+
+// Run pull manual now
+document.getElementById('run-pull').addEventListener('click', async ()=>{
+    if (!confirm('Jalankan proses ambil data sekarang?')) return;
+    document.getElementById('pull-result').textContent = 'Menjalankan...';
+    addPullLog("Menjalankan penarikan data manual...", "info");
+    try{
+        const res = await fetch('pull_and_enqueue.php');
+        const text = await res.text();
+        document.getElementById('pull-result').textContent = text;
+        addPullLog("Penarikan data manual selesai.", "success");
+    }catch(e){ 
+        document.getElementById('pull-result').textContent = e.toString(); 
+        addPullLog("Gagal menarik data manual: " + e.toString(), "error");
+    }
+    checkCurrentSchedule();
+});
+
+// Run send manual now
+document.getElementById('run-send').addEventListener('click', async ()=>{
+    if (!confirm('Jalankan proses kirim antrean sekarang?')) return;
+    document.getElementById('send-result').textContent = 'Menjalankan pengiriman manual...';
+    try{
+        const response = await fetch('send_whatsapp.php?t=' + new Date().getTime());
+        const j = await response.json();
+        document.getElementById('send-result').textContent = "Hasil: " + JSON.stringify(j, null, 2);
+        addSendLog("Pengiriman manual selesai. Total diproses: " + (j.total_processed || j.total || 0), j.success ? "success" : "error");
+    }catch(e){ 
+        document.getElementById('send-result').textContent = e.toString(); 
+        addSendLog("Gagal mengirim manual: " + e.toString(), "error");
+    }
+});
+</script>
+
+<script>
+    // --- BAGIAN 2: Logika Otomatisasi Kirim WA (Interval 5 Menit) ---
+    let intervalId = null;
+    let isRunning = false;
+    const INTERVAL_MS = 5 * 60 * 1000;
+
+    const toggleBtn = document.getElementById('toggleBtn');
+    const logDiv = document.getElementById('log');
+    const statusBadge = document.getElementById('statusBadge');
+    const nextRunDiv = document.getElementById('nextRun');
+    const nextRunTimeSpan = document.getElementById('nextRunTime');
+
+    function addSendLog(message, type = 'info') {
+        const now = new Date();
+        const time = now.toLocaleTimeString();
+        let colorClass = 'info-log';
+        if (type === 'success') colorClass = 'success-log';
+        if (type === 'error') colorClass = 'error-log';
+        
+        logDiv.innerHTML += `<div class="${colorClass}">[${time}] ${message}</div>`;
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function updateNextRunTime() {
+        const nextRun = new Date(Date.now() + INTERVAL_MS);
+        nextRunTimeSpan.textContent = nextRun.toLocaleTimeString();
+    }
+
+    async function sendWhatsApp() {
+        addSendLog("Mengecek antrean di database...", "info");
+        try {
+            const response = await fetch('send_whatsapp.php?t=' + new Date().getTime());
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data = await response.json();
+            if (data.success || data.status === 'success') {
+                const total = data.total_processed || data.total || (data.data ? data.data.total_processed : 0) || 0;
+                addSendLog(`Sukses! Berhasil memproses antrean. Total pesan: ${total}`, "success");
+            } else {
+                addSendLog(`Gagal memproses: ${data.message || 'Alasan tidak diketahui'}`, "error");
+            }
+        } catch (error) {
+            addSendLog(`Error saat memanggil API: ${error.message}`, "error");
+        }
+        if (isRunning) updateNextRunTime();
+    }
+
+    toggleBtn.addEventListener('click', () => {
+        if (!isRunning) {
+            isRunning = true;
+            toggleBtn.textContent = 'Hentikan Auto Send';
+            toggleBtn.className = 'running';
+            statusBadge.textContent = 'Status: BERJALAN';
+            statusBadge.className = 'status-badge status-on';
+            nextRunDiv.style.display = 'block';
+            addSendLog("Auto Send dimulai.", "info");
+            sendWhatsApp();
+            updateNextRunTime();
+            intervalId = setInterval(sendWhatsApp, INTERVAL_MS);
+        } else {
+            isRunning = false;
+            toggleBtn.textContent = 'Mulai Auto Send';
+            toggleBtn.className = 'stopped';
+            statusBadge.textContent = 'Status: BERHENTI';
+            statusBadge.className = 'status-badge status-off';
+            nextRunDiv.style.display = 'none';
+            addSendLog("Auto Send dihentikan.", "info");
+            if (intervalId) { clearInterval(intervalId); intervalId = null; }
+        }
+    });
+</script>
+
+<script>
+    // --- BAGIAN 3: Logika Otomatisasi Ambil Data (Senin, 01:00 - 07:00, Setiap 30 Menit) ---
+    let pullIntervalId = null;
+    let isPullRunning = false;
+    const PULL_INTERVAL_MS = 30 * 60 * 1000; // 30 Menit
+
+    const togglePullBtn = document.getElementById('togglePullBtn');
+    const pullLogDiv = document.getElementById('pull-log');
+    const pullStatusBadge = document.getElementById('pullStatusBadge');
+    const nextPullRunDiv = document.getElementById('nextPullRun');
+    const nextPullTimeSpan = document.getElementById('nextPullTime');
+
+    function addPullLog(message, type = 'info') {
+        const now = new Date();
+        const time = now.toLocaleTimeString();
+        let colorClass = 'info-log';
+        if (type === 'success') colorClass = 'success-log';
+        if (type === 'error') colorClass = 'error-log';
+        if (type === 'warning') colorClass = 'warning-log';
+        
+        pullLogDiv.innerHTML += `<div class="${colorClass}">[${time}] ${message}</div>`;
+        pullLogDiv.scrollTop = pullLogDiv.scrollHeight;
+    }
+
+    function updateNextPullTime() {
+        const nextPull = new Date(Date.now() + PULL_INTERVAL_MS);
+        nextPullTimeSpan.textContent = nextPull.toLocaleTimeString();
+    }
+
+    async function checkAndPullData() {
+        const now = new Date();
+        const day = now.getDay(); // 1 = Senin
+        const hour = now.getHours();
+
+        addPullLog("Memeriksa jadwal otomatisasi penarikan...", "info");
+        checkCurrentSchedule();
+
+        // VALIDASI UTAMA: Senin, Jam 01:00 s/d sebelum 07:00
+        if (day === 1 && hour >= 1 && hour < 7) {
+            addPullLog("Waktu sesuai jadwal (Senin, 01:00 - 07:00). Memulai proses ambil data...", "warning");
+            try {
+                const res = await fetch('pull_and_enqueue.php?t=' + new Date().getTime());
+                const text = await res.text();
+                
+                // Menampilkan potongan hasil text/HTML dari pull_and_enqueue.php ke log
+                document.getElementById('pull-result').textContent = text;
+                addPullLog(`Sukses! Proses ambil data berhasil dijalankan otomatis.`, "success");
+            } catch (e) {
+                addPullLog(`Gagal menarik data otomatis: ${e.toString()}`, "error");
+            }
+        } else {
+            addPullLog(`Diluar jadwal. Penarikan otomatis dilewati (Jadwal aktif: Senin jam 01.00-07.00 pagi).`, "info");
+        }
+
+        if (isPullRunning) {
+            updateNextPullTime();
+        }
+    }
+
+    togglePullBtn.addEventListener('click', () => {
+        if (!isPullRunning) {
+            isPullRunning = true;
+            togglePullBtn.textContent = 'Hentikan Auto Pull';
+            togglePullBtn.className = 'running';
+            pullStatusBadge.textContent = 'Status: BERJALAN';
+            pullStatusBadge.className = 'status-badge status-on';
+            nextPullRunDiv.style.display = 'block';
+            
+            addPullLog("Penjadwal otomatisasi Ambil Data diaktifkan.", "info");
+            
+            // Langsung eksekusi pengecekan pertama saat tombol dinyalakan
+            checkAndPullData();
+            
+            // Daftarkan interval perulangan pengecekan setiap 30 menit
+            updateNextPullTime();
+            pullIntervalId = setInterval(checkAndPullData, PULL_INTERVAL_MS);
+        } else {
+            isPullRunning = false;
+            togglePullBtn.textContent = 'Mulai Auto Pull (Senin 01:00 - 07:00)';
+            togglePullBtn.className = 'stopped';
+            pullStatusBadge.textContent = 'Status: BERHENTI';
+            pullStatusBadge.className = 'status-badge status-off';
+            nextPullRunDiv.style.display = 'none';
+            
+            addPullLog("Penjadwal otomatisasi Ambil Data dimatikan.", "info");
+            
+            if (pullIntervalId) {
+                clearInterval(pullIntervalId);
+                pullIntervalId = null;
+            }
+            checkCurrentSchedule();
+        }
+    });
+</script>
+</body>
+</html>
