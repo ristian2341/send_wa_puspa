@@ -1,7 +1,5 @@
 <?php
 // pull_and_enqueue.php
-// Murni melakukan penarikan data dari tabel sumber dan memasukkan ke tabel send_wa_history
-
 header('Content-Type: text/plain; charset=utf-8');
 
 require_once __DIR__ . '/config.php';
@@ -34,49 +32,38 @@ function getDbConnectionSimple($config)
     }
 }
 
-// =========================================================================
-// REFAKTORING FUNGSI AMBIL DATA
-// =========================================================================
-
 /**
- * Mengambil data invoice iuran berdasarkan periode berjalan
+ * Mengambil data gabungan Iuran dan Utility berdasarkan periode tertentu
  */
-function getInvoiceIuran($pdo)
+function getGabunganInvoice($pdo, $periode)
 {
-    $sql = "SELECT tn.kode_tub, tn.wa, tn.nama, ii.invoice_number, ii.periode, ii.jumlah, ii.payment 
-            FROM _tenant tn 
-            INNER JOIN `_invoice_iuran` ii ON tn.id_tenant = ii.id_tenant 
-            WHERE ii.periode = '0426'
-              AND (ii.jumlah - ii.payment) > 0
-              AND tn.wa <> ''
-            ORDER BY ii.periode ASC 
-            LIMIT 100";
-    
-    $stmt = $pdo->query($sql);
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
-
-/**
- * Mengambil data invoice utility (Listrik/Air) berdasarkan periode berjalan
- * Catatan: Sesuaikan nama tabel dan kolom utility jika berbeda di database Anda
- */
-function getInvoiceUtility($pdo)
-{
-    $sql = "SELECT tn.kode_tub, tn.wa, tn.nama, iu.invoice_number, iu.periode, iu.jumlah, iu.payment 
-            FROM _tenant tn 
-            INNER JOIN `_invoice_utility` iu ON tn.id_tenant = iu.id_tenant 
-            WHERE iu.periode = DATE_FORMAT(NOW(), '%m%y') 
-              AND (iu.jumlah - iu.payment) > 0
-              AND tn.wa <> ''
-            ORDER BY iu.periode ASC 
+    $sql = "SELECT 
+                tn.kode_tub, 
+                tn.nama, 
+                tn.wa,
+                COALESCE(ii.periode, iu.periode) AS periode,
+                IFNULL(ii.invoice_number, '-') AS no_iuran,
+                IFNULL(ii.jumlah - ii.payment, 0) AS tagihan_iuran,
+                IFNULL(iu.invoice_number, '-') AS no_utility,
+                IFNULL(iu.jumlah - iu.payment, 0) AS tagihan_utility
+            FROM _tenant tn
+            LEFT JOIN _invoice_iuran ii ON tn.id_tenant = ii.id_tenant AND ii.periode = :periode
+            LEFT JOIN _invoice_utility iu ON tn.id_tenant = iu.id_tenant AND iu.periode = :periode
+            WHERE tn.wa <> '' 
+              AND (
+                  (ii.jumlah - ii.payment) > 0 
+                  OR (iu.jumlah - iu.payment) > 0
+              )
+            ORDER BY tn.kode_tub ASC
             LIMIT 100";
             
-    $stmt = $pdo->query($sql);
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([':periode' => $periode]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
 /**
- * Fungsi pembantu untuk memformat periode '0526' menjadi 'Mey 2026'
+ * Format periode '0526' menjadi 'Mei 2026'
  */
 function formatPeriodeIndo($periodeStr)
 {
@@ -86,7 +73,7 @@ function formatPeriodeIndo($periodeStr)
 
     $daftarBulan = [
         '01' => 'Januari', '02' => 'Februari', '03' => 'Maret', 
-        '04' => 'April',   '05' => 'Mey',      '06' => 'Juni', 
+        '04' => 'April',   '05' => 'Mei',      '06' => 'Juni', 
         '07' => 'Juli',    '08' => 'Agustus',  '09' => 'September', 
         '10' => 'Oktober', '11' => 'November', '12' => 'Desember'
     ];
@@ -95,62 +82,19 @@ function formatPeriodeIndo($periodeStr)
     return $namaBulan . " " . $tahunPenuh;
 }
 
-/**
- * Fungsi memproses dan memasukkan data ke antrean wa history
- */
-function enqueueData($rows, $tipeInvoice, $hariIni, &$nomorUrut, $stmt_insert)
-{
-    $insertedCount = 0;
-    
-    foreach ($rows as $row) {
-        // Generate Code: YYYYMMDD00001
-        $formattedCode = $hariIni . str_pad($nomorUrut, 5, '0', STR_PAD_LEFT);
-        
-        // Format Periode ke "Mey 2026"
-        $periodeFormat = formatPeriodeIndo($row['periode']);
-        $sisaTagihan = $row['jumlah'] - $row['payment'];
-        
-        // Bedakan sedikit template pesan berdasarkan tipe invoice jika diperlukan
-        $pesanWhatsApp = "Kepada Yth.\n" .
-            "Bapak/Ibu " . $row['nama'] . " [" . $row['kode_tub'] . "]\n" .
-            "Di Tempat\n\n" .
-            "Dengan hormat,\n" .
-            "Bersama pesan ini, kami lampirkan/kirimkan invoice " . $tipeInvoice . " untuk unit tenant " . $row['kode_tub'] . " dengan rincian sebagai berikut:\n\n" .
-            "Nomor Invoice: " . $row['invoice_number'] . "\n" .
-            "Periode: " . $periodeFormat . "\n" .
-            "Total Tagihan: Rp " . number_format($sisaTagihan, 0, ',', '.') . ",-\n\n" .
-            "Mohon dapat segera melakukan pembayaran sebelum jatuh tempo. Apabila Bapak/Ibu sudah melakukan pembayaran, mohon abaikan pemberitahuan ini.\n\n" .
-            "Atas perhatian dan kerja samanya, kami ucapkan terima kasih.";
-
-        // Eksekusi insert data
-        $stmt_insert->execute([
-            ':code'         => $formattedCode,
-            ':nomor_wa'     => $row['wa'],
-            ':penerima'     => $row['nama'],
-            ':no_transaksi' => $row['invoice_number'],
-            ':message'      => $pesanWhatsApp,
-            ':logs_send'    => "",
-            ':status'       => 1
-        ]);
-
-        $nomorUrut++; // Terus bertambah untuk baris berikutnya
-        $insertedCount++;
-    }
-    
-    return $insertedCount;
-}
-
 // =========================================================================
 // JALANKAN PROSES UTAMA
 // =========================================================================
 
-// Koneksi ke database
 $pdo = getDbConnectionSimple($db_config);
 $totalDiproses = 0;
 
+// Tentukan periode yang ingin ditarik (Contoh: '0321' sesuai query kamu)
+$periodeTarget = date('md'); 
+
 try {
     // 1. Hitung / Ambil nomor urut awal hari ini dari database
-    $hariIni = date('20260401');
+    $hariIni = date('Ymd');
     $sql_cek_urut = "SELECT code FROM `_send_wa_history` 
                      WHERE code LIKE :hariIni 
                      ORDER BY code DESC LIMIT 1";
@@ -165,40 +109,71 @@ try {
         $nomorUrut = 1;
     }
 
-    // 2. Siapkan prepare statement INSERT yang akan digunakan bersama
+    // 2. Siapkan prepare statement INSERT
     $sql_insert = "INSERT INTO `_send_wa_history`
-                   (code, nomor_wa, penerima, no_transaksi, message, logs_send, waktu_kirim, status)
+                   (code, nomor_wa, penerima, kode_tub, no_transaksi, message, logs_send, waktu_kirim, status)
                    VALUES 
-                   (:code, :nomor_wa, :penerima, :no_transaksi, :message, :logs_send, NOW(), :status)";
+                   (:code, :nomor_wa, :penerima, :kode_tub, :no_transaksi, :message, :logs_send, NOW(), :status)";
     $stmt_insert = $pdo->prepare($sql_insert);
 
-    // -----------------------------------------------------------------
-    // PROSES 1: INVOICE IURAN
-    // -----------------------------------------------------------------
-    tulisLogKeFile("Memulai penarikan data Invoice Iuran...");
-    $dataIuran = getInvoiceIuran($pdo);
+    // 3. Tarik data gabungan
+    tulisLogKeFile("Memulai penarikan data gabungan Invoice Iuran & Utility periode {$periodeTarget}...");
+    $dataInvoice = getGabunganInvoice($pdo, $periodeTarget);
     
-    if (count($dataIuran) > 0) {
-        $jumlahIuran = enqueueData($dataIuran, "Layanan", $hariIni, $nomorUrut, $stmt_insert);
-        $totalDiproses += $jumlahIuran;
-        tulisLogKeFile("Berhasil mengantrekan {$jumlahIuran} data Invoice Iuran.");
-    } else {
-        tulisLogKeFile("Tidak ada data Invoice Iuran hari ini.");
-    }
+    if (count($dataInvoice) > 0) {
+        foreach ($dataInvoice as $row) {
+            $formattedCode = $hariIni . str_pad($nomorUrut, 5, '0', STR_PAD_LEFT);
+            $periodeFormat = formatPeriodeIndo($row['periode']);
+            
+            // Susun rincian dinamis berdasarkan komponen yang ada nilainya
+            $rincianTagihan = "";
+            $totalTagihan = 0;
+            $nomorInvoiceGabungan = [];
 
-    // -----------------------------------------------------------------
-    // PROSES 2: INVOICE UTILITY
-    // -----------------------------------------------------------------
-    tulisLogKeFile("Memulai penarikan data Invoice Utility...");
-    $dataUtility = getInvoiceUtility($pdo);
-    
-    if (count($dataUtility) > 0) {
-        // Variabel $nomorUrut dilemparkan kembali dan otomatis melanjutkan urutan terakhir dari Proses 1
-        $jumlahUtility = enqueueData($dataUtility, "Maintainance", $hariIni, $nomorUrut, $stmt_insert);
-        $totalDiproses += $jumlahUtility;
-        tulisLogKeFile("Berhasil mengantrekan {$jumlahUtility} data Invoice Utility.");
+            if ($row['tagihan_iuran'] > 0) {
+                $rincianTagihan .= "- Tagihan Iuran (" . $row['no_iuran'] . "): Rp " . number_format($row['tagihan_iuran'], 0, ',', '.') . ",-\n";
+                $totalTagihan += $row['tagihan_iuran'];
+                $nomorInvoiceGabungan[] = $row['no_iuran'];
+            }
+
+            if ($row['tagihan_utility'] > 0) {
+                $rincianTagihan .= "- Tagihan Utility (" . $row['no_utility'] . "): Rp " . number_format($row['tagihan_utility'], 0, ',', '.') . ",-\n";
+                $totalTagihan += $row['tagihan_utility'];
+                $nomorInvoiceGabungan[] = $row['no_utility'];
+            }
+
+            // Teks pesan WhatsApp gabungan
+            $pesanWhatsApp = "Kepada Yth.\n" .
+                "Bapak/Ibu " . $row['nama'] . " [" . $row['kode_tub'] . "]\n" .
+                "Di Tempat\n\n" .
+                "Dengan hormat,\n" .
+                "Bersama pesan ini, kami sampaikan rincian tagihan untuk unit tenant " . $row['kode_tub'] . " Periode " . $periodeFormat . " sebagai berikut:\n\n" .
+                $rincianTagihan . "\n" .
+                "Total Yang Harus Dibayar: *Rp " . number_format($totalTagihan, 0, ',', '.') . ",-*\n\n" .
+                "Mohon dapat segera melakukan pembayaran sebelum jatuh tempo. Apabila Bapak/Ibu sudah melakukan pembayaran, mohon konfirmasi ke petugas penagihan.\n\n" .
+                "Atas perhatian dan kerja samanya, kami ucapkan terima kasih.";
+
+            // Simpan daftar invoice ke kolom no_transaksi (pisahkan koma jika ada dua)
+            $noTransaksiSimpan = implode(', ', $nomorInvoiceGabungan);
+
+            // Eksekusi insert data
+            $stmt_insert->execute([
+                ':code'         => $formattedCode,
+                ':nomor_wa'     => $row['wa'],
+                ':penerima'     => $row['nama'],
+                ':kode_tub'     => $row['kode_tub'],
+                ':no_transaksi' => $noTransaksiSimpan,
+                ':message'      => $pesanWhatsApp,
+                ':logs_send'    => "",
+                ':status'       => 1
+            ]);
+
+            $nomorUrut++;
+            $totalDiproses++;
+        }
+        tulisLogKeFile("Berhasil mengantrekan {$totalDiproses} data gabungan.");
     } else {
-        tulisLogKeFile("Tidak ada data Invoice Utility hari ini.");
+        tulisLogKeFile("Tidak ada data tagihan yang ditemukan untuk periode ini.");
     }
 
 } catch (Exception $e) {
@@ -209,7 +184,7 @@ try {
 }
 
 // Output respon akhir
-$msgSelesai = "Selesai: Total keseluruhan {$totalDiproses} baris data berhasil diproses ke _send_wa_history.";
+$msgSelesai = "Selesai: Total keseluruhan {$totalDiproses} baris data berhasil digabungkan ke _send_wa_history.";
 echo $msgSelesai . PHP_EOL;
 tulisLogKeFile($msgSelesai);
 
