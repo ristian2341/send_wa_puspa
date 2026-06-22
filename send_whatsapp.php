@@ -115,8 +115,9 @@ function run()
 
     $pdo = getDbConnection($db_config);
 
-    // Ambil data antrean dengan status 0
-    $stmt = $pdo->query("SELECT * FROM _send_wa_history WHERE status = 1 limit 10");
+    // AMAN: Batasi hanya 5 pesan per 5 menit (sesuai interval AJAX kontrol panel)
+    // Agar dalam 1 jam nomor Anda maksimal hanya mengirim sekitar 60 pesan secara natural
+    $stmt = $pdo->query("SELECT * FROM _send_wa_history WHERE status = 1 LIMIT 5");
     $queue = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $results = [
@@ -130,15 +131,13 @@ function run()
         $updateStmt = $pdo->prepare("UPDATE _send_wa_history SET status = :status, logs_send = :logs_send WHERE code = :code");
 
         foreach ($queue as $row) {
-            // Asumsi nama kolom yang sering dipakai: id, nomor HP (target/phone), pesan (message/pesan)
-            // Ganti nama kolom sesuai dengan field di table database Anda!
             $code = $row['code'];
             $nomor_wa = isset($row['nomor_wa']) ? $row['nomor_wa'] : (isset($row['phone']) ? $row['phone'] : (isset($row['no_hp']) ? $row['no_hp'] : ''));
             $message = isset($row['message']) ? $row['message'] : (isset($row['pesan']) ? $row['pesan'] : '');
 
             if (empty($nomor_wa) || empty($message)) {
                 $results['failed_count']++;
-                $results['details'][] = ['code' => $code, 'success' => false, 'error' => 'Nomor tujuan (target/phone) atau pesan (message/pesan) kosong di database'];
+                $results['details'][] = ['code' => $code, 'success' => false, 'error' => 'Nomor tujuan atau pesan kosong'];
                 $updateStmt->execute([
                     'status' => 3,
                     'logs_send' => json_encode(['error' => 'Target atau message kosong']),
@@ -158,11 +157,11 @@ function run()
                 'code' => $code
             ]);
 
-            // tulis log ke file
+            // Tulis log ke file
             try {
                 writeSendLog($code, $nomor_wa, $sendResult);
             } catch (Exception $e) {
-                // jangan ganggu proses utama
+                // Jangan ganggu proses utama
             }
 
             $results['total_processed']++;
@@ -179,20 +178,24 @@ function run()
                 'api_response' => $sendResult
             ];
 
-            // Opsional: Kasih jeda kecil (1 detik) antar pesan untuk menghindari pemblokiran / rate limit Fonnte
-            sleep(1);
+            // KUNCI UTAMA ANTI-SPAM: Gunakan Jeda Acak (Human-Like Delay)
+            // Meniru perilaku manusia yang butuh waktu mengetik bervariasi antara 10 - 25 detik
+            if ($results['total_processed'] < count($queue)) {
+                $random_delay = rand(10, 25);
+                sleep($random_delay);
+            }
         }
     }
 
     $finalOutput = [
         'success' => true,
-        'message' => count($queue) > 0 ? 'Proses antrean selesai' : 'Tidak ada antrean (status=1) di database.',
+        'message' => count($queue) > 0 ? 'Proses antrean batch selesai' : 'Tidak ada antrean (status=1) di database.',
         'data' => $results
     ];
 
     if ($is_cli) {
         if (count($queue) == 0) {
-            echo "Tidak ada antrean (status=0).\n";
+            echo "Tidak ada antrean (status=1).\n";
         } else {
             echo "Total diproses: " . $results['total_processed'] . "\n";
             echo "Berhasil: " . $results['success_count'] . "\n";
