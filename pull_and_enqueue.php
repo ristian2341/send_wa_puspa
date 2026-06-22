@@ -86,7 +86,7 @@ function formatPeriodeIndo($periodeStr)
 // JALANKAN PROSES UTAMA
 // =========================================================================
 
-$pdo = getDbConnectionSimple($db_config);
+$pdo = getDbConnectionSimple($db_config = []);
 $totalDiproses = 0;
 
 // Tentukan periode yang ingin ditarik (Contoh: '0321' sesuai query kamu)
@@ -151,7 +151,7 @@ try {
                 $rincianTagihan . "\n" .
                 "Total Yang Harus Dibayar: *Rp " . number_format($totalTagihan, 0, ',', '.') . ",-*\n\n" .
                 "Mohon dapat segera melakukan pembayaran sebelum jatuh tempo. Apabila Bapak/Ibu sudah melakukan pembayaran, mohon konfirmasi ke petugas penagihan.\n\n" .
-                "Atas perhatian dan kerja samanya, kami ucapkan terima kasih.";
+                "Atas perhatian dan kerja samanya, kami ucapkan terima kasih.\n Untuk Konfirmasi Pembayara Bisa kirim ke Nomor WA : 082389994906";
 
             // Simpan daftar invoice ke kolom no_transaksi (pisahkan koma jika ada dua)
             $noTransaksiSimpan = implode(', ', $nomorInvoiceGabungan);
