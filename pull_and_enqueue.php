@@ -151,7 +151,7 @@ try {
                 $rincianTagihan . "\n" .
                 "Total Yang Harus Dibayar: *Rp " . number_format($totalTagihan, 0, ',', '.') . ",-*\n\n" .
                 "Mohon dapat segera melakukan pembayaran sebelum jatuh tempo. Apabila Bapak/Ibu sudah melakukan pembayaran, mohon konfirmasi ke petugas penagihan.\n\n" .
-                "Atas perhatian dan kerja samanya, kami ucapkan terima kasih.\n Untuk Konfirmasi Pembayara Bisa kirim ke Nomor WA : 082389994906";
+                "Atas perhatian dan kerja samanya, kami ucapkan terima kasih.";
 
             // Simpan daftar invoice ke kolom no_transaksi (pisahkan koma jika ada dua)
             $noTransaksiSimpan = implode(', ', $nomorInvoiceGabungan);
