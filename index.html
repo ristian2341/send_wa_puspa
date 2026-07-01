@@ -84,7 +84,7 @@
 
 <div class="tabs">
     <button class="tab-btn" data-tab="tab-send">Kirim WA</button>
-    <button class="tab-btn" data-tab="tab-pull">Ambil Data</button>
+    <button class="tab-btn" data-tab="tab-pull" style="display:none">Ambil Data</button>
 </div>
 
 <!-- ================= TAB 1: KIRIM WA ================= -->
@@ -117,9 +117,10 @@
         <p>Tarik data dari sumber dan masukkan ke send_wa_history.</p>
         
         <div style="margin: 20px 0;">
-            <button id="togglePullBtn" class="stopped">Mulai Auto Pull (Senin 01:00 - 07:00)</button>
-            <button id="run-pull" style="padding: 12px 24px; font-size: 16px;">Jalankan Ambil Sekarang</button>
-            <span id="pullStatusBadge" class="status-badge status-off">Status: BERHENTI</span>
+            <!-- Pull controls hidden: automatic pull disabled to ensure only send_whatsapp runs -->
+            <button id="togglePullBtn" class="stopped" disabled>Mulai Auto Pull (Dinonaktifkan)</button>
+            <button id="run-pull" style="padding: 12px 24px; font-size: 16px;" disabled>Jalankan Ambil Sekarang</button>
+            <span id="pullStatusBadge" class="status-badge status-off">Status: DINONAKTIFKAN</span>
         </div>
 
         <div id="nextPullRun" style="font-size: 14px; color: #666; margin-bottom: 10px; display: none;">
@@ -208,10 +209,13 @@ document.getElementById('run-send').addEventListener('click', async ()=>{
 </script>
 
 <script>
-    // --- BAGIAN 2: Logika Otomatisasi Kirim WA (Interval 5 Menit) ---
+    // --- BAGIAN 2: Logika Otomatisasi Kirim WA (Interval Acak > 1 Menit) ---
     let intervalId = null;
     let isRunning = false;
-    const INTERVAL_MS = 5 * 60 * 1000;
+
+    // Tentukan batas minimal dan maksimal dalam milidetik (ms)
+    const MIN_INTERVAL_MS = 2 * 60 * 1000;  // Minimal 2 Menit
+    const MAX_INTERVAL_MS = 10 * 60 * 1000;  // Maksimal 10 Menit (bisa disesuaikan)
 
     const toggleBtn = document.getElementById('toggleBtn');
     const logDiv = document.getElementById('log');
@@ -230,9 +234,9 @@ document.getElementById('run-send').addEventListener('click', async ()=>{
         logDiv.scrollTop = logDiv.scrollHeight;
     }
 
-    function updateNextRunTime() {
-        const nextRun = new Date(Date.now() + INTERVAL_MS);
-        nextRunTimeSpan.textContent = nextRun.toLocaleTimeString();
+    // Fungsi baru untuk mendapatkan durasi acak di antara MIN dan MAX
+    function getRandomizedInterval() {
+        return Math.floor(Math.random() * (MAX_INTERVAL_MS - MIN_INTERVAL_MS + 1)) + MIN_INTERVAL_MS;
     }
 
     async function sendWhatsApp() {
@@ -250,7 +254,13 @@ document.getElementById('run-send').addEventListener('click', async ()=>{
         } catch (error) {
             addSendLog(`Error saat memanggil API: ${error.message}`, "error");
         }
-        if (isRunning) updateNextRunTime();
+
+        // Jika status masih berjalan, jadwalkan pengiriman berikutnya secara acak
+        if (isRunning) {
+            const nextMs = getRandomizedInterval();
+            nextRunTimeSpan.textContent = new Date(Date.now() + nextMs).toLocaleTimeString();
+            intervalId = setTimeout(sendWhatsApp, nextMs);
+        }
     }
 
     toggleBtn.addEventListener('click', () => {
@@ -262,9 +272,12 @@ document.getElementById('run-send').addEventListener('click', async ()=>{
             statusBadge.className = 'status-badge status-on';
             nextRunDiv.style.display = 'block';
             addSendLog("Auto Send dimulai.", "info");
-            sendWhatsApp();
-            updateNextRunTime();
-            intervalId = setInterval(sendWhatsApp, INTERVAL_MS);
+            
+            // Eksekusi pertama langsung dijalankan
+            sendWhatsApp(); 
+            
+            // Catatan: setTimeout berikutnya otomatis diatur di akhir fungsi sendWhatsApp(),
+            // jadi kita tidak perlu menulis setTimeout lagi di sini (menghindari double trigger).
         } else {
             isRunning = false;
             toggleBtn.textContent = 'Mulai Auto Send';
@@ -273,7 +286,11 @@ document.getElementById('run-send').addEventListener('click', async ()=>{
             statusBadge.className = 'status-badge status-off';
             nextRunDiv.style.display = 'none';
             addSendLog("Auto Send dihentikan.", "info");
-            if (intervalId) { clearInterval(intervalId); intervalId = null; }
+            
+            if (intervalId) { 
+                clearTimeout(intervalId); 
+                intervalId = null; 
+            }
         }
     });
 </script>
