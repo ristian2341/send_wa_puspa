@@ -143,18 +143,40 @@ try {
             }
 
             // Teks pesan WhatsApp gabungan
-            $pesanWhatsApp = "Kepada Yth.\n" .
-                "Bapak/Ibu " . $row['nama'] . " [" . $row['kode_tub'] . "]\n" .
-                "Di Tempat\n\n" .
-                "Dengan hormat,\n" .
-                "Bersama pesan ini, kami sampaikan rincian tagihan untuk unit tenant " . $row['kode_tub'] . " Periode " . $periodeFormat . " sebagai berikut:\n\n" .
-                $rincianTagihan . "\n" .
-                "Total Yang Harus Dibayar: *Rp " . number_format($totalTagihan, 0, ',', '.') . ",-*\n\n" .
-                "Mohon dapat segera melakukan pembayaran sebelum jatuh tempo. Apabila Bapak/Ibu sudah melakukan pembayaran, mohon konfirmasi ke petugas penagihan.\n\n" .
-                "Atas perhatian dan kerja samanya, kami ucapkan terima kasih.";
+            // $pesanWhatsApp = "Kepada Yth.\n" .
+            //     "Bapak/Ibu " . $row['nama'] . " [" . $row['kode_tub'] . "]\n" .
+            //     "Di Tempat\n\n" .
+            //     "Dengan hormat,\n" .
+            //     "Bersama pesan ini, kami sampaikan rincian tagihan untuk unit tenant " . $row['kode_tub'] . " Periode " . $periodeFormat . " sebagai berikut:\n\n" .
+            //     $rincianTagihan . "\n" .
+            //     "Total Yang Harus Dibayar: *Rp " . number_format($totalTagihan, 0, ',', '.') . ",-*\n\n" .
+            //     "Mohon dapat segera melakukan pembayaran sebelum jatuh tempo. Apabila Bapak/Ibu sudah melakukan pembayaran, mohon konfirmasi ke petugas penagihan.\n\n" .
+            //     "Atas perhatian dan kerja samanya, kami ucapkan terima kasih.";
 
-            // Simpan daftar invoice ke kolom no_transaksi (pisahkan koma jika ada dua)
+            // 1. Buat variasi kata pembuka dan penutup (Spintax)
+            $pembuka = ["Yth. ","Kepada Yth ", "Kepada Yth. \n", "Pemberitahuan kepada ", "Salam sejahtera "];
+            $salam_acak = $pembuka[array_rand($pembuka)];
+
+            $terimakasih = [
+                "kami ucapkan terima kasih.",
+                "terima kasih banyak.",
+                "terima kasih.",
+                "terima kasih, dan semoga sehat selalu.",
+                "terima kasih, semoga hari Anda menyenangkan.",
+                "terima kasih, semoga urusan Bapak/Ibu dilancarkan."
+            ];
+
+            // Mengambil satu secara acak
+            $thanks_acak = $terimakasih[array_rand($terimakasih)];
+
+            // // Simpan daftar invoice ke kolom no_transaksi (pisahkan koma jika ada dua)
             $noTransaksiSimpan = implode(', ', $nomorInvoiceGabungan);
+
+            $pesanWhatsApp = $salam_acak."Bapak/Ibu " . $row['nama'] . " [" . $row['kode_tub'] . "]\n" .
+                "Bersama pesan ini, kami sampaikan tagihan untuk unit tenant " . $row['kode_tub'] . " Sebesar : *Rp " . number_format($totalTagihan, 0, ',', '.') . "\n" .
+                "Pembayaran melalui Transfer Bank Ke rekening BPD Bank Jatim NO. 0721000745.\n\n" .
+                "Bukti pembayaran mohon dikirimkan melalui WA ke Nomor 082389994906.\n\n" .
+                "Atas perhatian dan kerjasamanya " . $thanks_acak;
 
             // Eksekusi insert data
             $stmt_insert->execute([
