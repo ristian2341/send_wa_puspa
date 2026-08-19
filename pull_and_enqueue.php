@@ -54,8 +54,7 @@ function getGabunganInvoice($pdo, $periode)
                   (ii.jumlah - ii.payment) > 0 
                   OR (iu.jumlah - iu.payment) > 0
               )
-            ORDER BY tn.kode_tub ASC
-            LIMIT 100";
+            ORDER BY tn.kode_tub ASC";
             
     $stmt = $pdo->prepare($sql);
     $stmt->execute([':periode' => $periode]);
@@ -85,12 +84,12 @@ function formatPeriodeIndo($periodeStr)
 // =========================================================================
 // JALANKAN PROSES UTAMA
 // =========================================================================
-
-$pdo = getDbConnectionSimple($db_config = []);
+$pdo = getDbConnectionSimple($db_config);
 $totalDiproses = 0;
 
 // Tentukan periode yang ingin ditarik (Contoh: '0321' sesuai query kamu)
-$periodeTarget = date('md'); 
+$periodeTarget = date('my'); 
+$periodeTarget = '0426'; 
 
 try {
     // 1. Hitung / Ambil nomor urut awal hari ini dari database
@@ -111,9 +110,9 @@ try {
 
     // 2. Siapkan prepare statement INSERT
     $sql_insert = "INSERT INTO `_send_wa_history`
-                   (code, nomor_wa, penerima, kode_tub, no_transaksi, message, logs_send, waktu_kirim, status)
-                   VALUES 
-                   (:code, :nomor_wa, :penerima, :kode_tub, :no_transaksi, :message, :logs_send, NOW(), :status)";
+                    (code, nomor_wa, penerima, kode_tub, no_transaksi, message, logs_send, waktu_kirim, status)
+                    VALUES 
+                    (:code, :nomor_wa, :penerima, :kode_tub, :no_transaksi, :message, :logs_send, NOW(), :status);";
     $stmt_insert = $pdo->prepare($sql_insert);
 
     // 3. Tarik data gabungan

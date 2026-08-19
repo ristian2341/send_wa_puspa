@@ -117,7 +117,10 @@
 
         // AMAN: Batasi hanya 5 pesan per 5 menit (sesuai interval AJAX kontrol panel)
         // Agar dalam 1 jam nomor Anda maksimal hanya mengirim sekitar 60 pesan secara natural
-        $stmt = $pdo->query("SELECT * FROM _send_wa_history WHERE status = 1 LIMIT 5");
+        $stmt = $pdo->query("SELECT * FROM _send_wa_history 
+          WHERE status = 1 
+          AND DATE(tglInput) = CURDATE() 
+          LIMIT 1");
         $queue = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $results = [
